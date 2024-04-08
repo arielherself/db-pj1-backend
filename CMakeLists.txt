@@ -11,3 +11,4 @@ endif()
 
 add_subdirectory(bserv)
 add_subdirectory(WebApp)
+# add_subdirectory(examples)

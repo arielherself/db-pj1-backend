@@ -1,10 +1,14 @@
 .vscode
 .vs
+.cache
+compile_commands.json
 pgsql
 x64
 /WebApp/log
 /config.json
 /build
+/log
+/out
 
 # Prerequisites
 *.d
