@@ -11,4 +11,4 @@ CREATE TABLE restaurants (
     name character varying(255) NOT NULL,
     address character varying(255) NOT NULL,
     contact character varying(255) NOT NULL
-)
+);

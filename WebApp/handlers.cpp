@@ -16,15 +16,15 @@
 // if the returned json object is `obj`, `obj[name[i]]` will have
 // the type of `Type[i]` and store the value of field[i].
 bserv::db_relation_to_object orm_user{
-	bserv::make_db_field<int>("id"),
+	bserv::make_db_field<std::int64_t>("id"),
 	bserv::make_db_field<std::string>("name"),
 	bserv::make_db_field<std::string>("password"),
 	bserv::make_db_field<std::string>("email")
 };
 
 bserv::db_relation_to_object orm_restaurant{
-	bserv::make_db_field<int>("id"),
-    bserv::make_db_field<int>("user_id"),
+	bserv::make_db_field<std::int64_t>("id"),
+    bserv::make_db_field<std::int64_t>("user_id"),
 	bserv::make_db_field<std::string>("name"),
 	bserv::make_db_field<std::string>("address"),
 	bserv::make_db_field<std::string>("contact")
@@ -56,12 +56,73 @@ std::vector<boost::json::object> get_restaurants(
     auto user = get_user_from_password(tx, email, password);
     if (user.has_value()) {
         bserv::db_result r = tx.exec(
-            "select * from restaurants where user_id = ?", boost::json::value(user.value()["id"]));
+            "select * from ? where user_id = ?", bserv::db_name("restaurants"), user.value()["id"].as_int64());
         lginfo << r.query(); // this is how you log info
         return orm_restaurant.convert_to_vector(r);
         
     } else {
         return {};
+    }
+}
+
+std::optional<boost::json::object> get_restaurant(
+	bserv::db_transaction& tx,
+	const boost::json::string& email,
+    const boost::json::string& password,
+    const int64_t& restaurant_id) {
+    auto user = get_user_from_password(tx, email, password);
+    if (user.has_value()) {
+        bserv::db_result r = tx.exec(
+            "select * from ? where user_id = ? and id = ?", bserv::db_name("restaurants"), user.value()["id"].as_int64(), restaurant_id);
+        lginfo << r.query(); // this is how you log info
+        return orm_restaurant.convert_to_optional(r);
+        
+    } else {
+        return {};
+    }
+}
+
+void add_restaurant(
+	bserv::db_transaction& tx,
+	const boost::json::string& email,
+    const boost::json::string& password,
+    const boost::json::string& name,
+    const boost::json::string& address,
+    const boost::json::string& contact) {
+    auto user = get_user_from_password(tx, email, password);
+    if (user.has_value()) {
+        bserv::db_result r = tx.exec(
+            "insert into ? (user_id, name, address, contact) values (?, ?, ?, ?)", bserv::db_name("restaurants"), user.value()["id"].as_int64(), name, address, contact);
+        lginfo << r.query(); // this is how you log info
+    }
+}
+
+void del_restaurant(
+	bserv::db_transaction& tx,
+	const boost::json::string& email,
+    const boost::json::string& password,
+    const int& restaurant_id) {
+    auto user = get_user_from_password(tx, email, password);
+    if (user.has_value()) {
+        bserv::db_result r = tx.exec(
+            "delete from restaurants where user_id = ? and id = ?", user.value()["id"].as_int64(), restaurant_id);
+        lginfo << r.query(); // this is how you log info
+    }
+}
+
+void update_restaurant(
+	bserv::db_transaction& tx,
+	const boost::json::string& email,
+    const boost::json::string& password,
+    const std::int64_t& restaurant_id,
+    const boost::json::string& name,
+    const boost::json::string& address,
+    const boost::json::string& contact) {
+    auto user = get_user_from_password(tx, email, password);
+    if (user.has_value()) {
+        bserv::db_result r = tx.exec(
+            "update restaurants set name = ?, address = ?, contact = ? where user_id = ? and id = ?",  name, address, contact, user.value()["id"].as_int64(), restaurant_id);
+        lginfo << r.query(); // this is how you log info
     }
 }
 
@@ -295,7 +356,67 @@ boost::json::array a_function_restaurants(
 	bserv::db_transaction tx{ conn };
 	auto email = params["email"].as_string();
 	auto password = params["password"].as_string();
-    if (request.method() == boost::beast::http::verb::get) {
+    if (request.method() == boost::beast::http::verb::put) {
+        update_restaurant(tx, email, password, params["id"].as_int64(), params["name"].as_string(), params["address"].as_string(), params["contact"].as_string());
+        tx.commit();
+        return {};
+    } else if (request.method() == boost::beast::http::verb::post) {
+        add_restaurant(tx, email, password, params["name"].as_string(), params["address"].as_string(), params["contact"].as_string());
+        tx.commit();
+        return {};
+    } else if (request.method() == boost::beast::http::verb::delete_) {
+        del_restaurant(tx, email, password, params["id"].as_int64());
+        tx.commit();
+        return {};
+    } else {
+		throw bserv::url_not_found_exception{};
+	}
+}
+
+// if you return a json object, the serialization
+// is performed automatically.
+boost::json::array a_function_delete_restaurant(
+	bserv::request_type& request,
+	// the json object is obtained from the request body,
+	// as well as the url parameters
+	boost::json::object&& params,
+	std::shared_ptr<bserv::db_connection> conn) {
+	if (params.count("email") == 0) {
+		return {};
+	}
+	if (params.count("password") == 0) {
+		return {};
+	}
+	bserv::db_transaction tx{ conn };
+	auto email = params["email"].as_string();
+	auto password = params["password"].as_string();
+    if (request.method() == boost::beast::http::verb::post) {
+        del_restaurant(tx, email, password, params["id"].as_int64());
+        tx.commit();
+        return {};
+    } else {
+		throw bserv::url_not_found_exception{};
+	}
+}
+
+// if you return a json object, the serialization
+// is performed automatically.
+boost::json::array a_function_query_restaurants(
+	bserv::request_type& request,
+	// the json object is obtained from the request body,
+	// as well as the url parameters
+	boost::json::object&& params,
+	std::shared_ptr<bserv::db_connection> conn) {
+	if (params.count("email") == 0) {
+		return {};
+	}
+	if (params.count("password") == 0) {
+		return {};
+	}
+	bserv::db_transaction tx{ conn };
+	auto email = params["email"].as_string();
+	auto password = params["password"].as_string();
+    if (request.method() == boost::beast::http::verb::post) {
         // fetch restaurants
         auto res = get_restaurants(tx, email, password);
         boost::json::array ret;
@@ -303,6 +424,36 @@ boost::json::array a_function_restaurants(
             ret.push_back(obj);
         }
         return ret;
+    } else {
+		throw bserv::url_not_found_exception{};
+	}
+}
+
+// if you return a json object, the serialization
+// is performed automatically.
+boost::json::object a_function_query_restaurant(
+	bserv::request_type& request,
+	// the json object is obtained from the request body,
+	// as well as the url parameters
+	boost::json::object&& params,
+	std::shared_ptr<bserv::db_connection> conn) {
+	if (params.count("email") == 0) {
+		return {};
+	}
+	if (params.count("password") == 0) {
+		return {};
+	}
+	bserv::db_transaction tx{ conn };
+	auto email = params["email"].as_string();
+	auto password = params["password"].as_string();
+    if (request.method() == boost::beast::http::verb::post) {
+        // fetch restaurants
+        auto res = get_restaurant(tx, email, password, params["id"].as_int64());
+        if (res.has_value()) {
+            return res.value();
+        } else {
+            return {};
+        }
     } else {
 		throw bserv::url_not_found_exception{};
 	}
