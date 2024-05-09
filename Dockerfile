@@ -23,6 +23,8 @@ RUN apt install --no-install-recommends libpq-dev -y
 RUN apt clean
 ENV LD_LIBRARY_PATH=/usr/local/lib
 RUN mkdir /bserv
+RUN mkdir /data
+COPY config.json /data/
 COPY --from=builder /bserv/build /bserv
 WORKDIR /bserv/WebApp
 CMD ./WebApp /data/config.json
