@@ -17,22 +17,52 @@
 // the type of `Type[i]` and store the value of field[i].
 bserv::db_relation_to_object orm_user{
 	bserv::make_db_field<int>("id"),
-	bserv::make_db_field<std::string>("username"),
+	bserv::make_db_field<std::string>("name"),
 	bserv::make_db_field<std::string>("password"),
-	bserv::make_db_field<bool>("is_superuser"),
-	bserv::make_db_field<std::string>("first_name"),
-	bserv::make_db_field<std::string>("last_name"),
-	bserv::make_db_field<std::string>("email"),
-	bserv::make_db_field<bool>("is_active")
+	bserv::make_db_field<std::string>("email")
+};
+
+bserv::db_relation_to_object orm_restaurant{
+	bserv::make_db_field<int>("id"),
+    bserv::make_db_field<int>("user_id"),
+	bserv::make_db_field<std::string>("name"),
+	bserv::make_db_field<std::string>("address"),
+	bserv::make_db_field<std::string>("contact")
 };
 
 std::optional<boost::json::object> get_user(
 	bserv::db_transaction& tx,
-	const boost::json::string& username) {
+	const boost::json::string& email) {
 	bserv::db_result r = tx.exec(
-		"select * from auth_user where username = ?", username);
+		"select * from auth_user where email = ?", email);
 	lginfo << r.query(); // this is how you log info
 	return orm_user.convert_to_optional(r);
+}
+
+std::optional<boost::json::object> get_user_from_password(
+	bserv::db_transaction& tx,
+	const boost::json::string& email,
+    const boost::json::string& password) {
+	bserv::db_result r = tx.exec(
+		"select * from auth_user where email = ? and password = ?", email, password);
+	lginfo << r.query(); // this is how you log info
+	return orm_user.convert_to_optional(r);
+}
+
+std::vector<boost::json::object> get_restaurants(
+	bserv::db_transaction& tx,
+	const boost::json::string& email,
+    const boost::json::string& password) {
+    auto user = get_user_from_password(tx, email, password);
+    if (user.has_value()) {
+        bserv::db_result r = tx.exec(
+            "select * from restaurants where user_id = ?", boost::json::value(user.value()["id"]));
+        lginfo << r.query(); // this is how you log info
+        return orm_restaurant.convert_to_vector(r);
+        
+    } else {
+        return {};
+    }
 }
 
 std::string get_or_empty(
@@ -62,7 +92,7 @@ std::nullopt_t hello(
 		auto& user = session["user"].as_object();
 		session["count"] = session["count"].as_int64() + 1;
 		obj = {
-			{"welcome", user["username"]},
+			{"welcome", user["name"]},
 			{"count", session["count"]}
 		};
 	}
@@ -75,7 +105,7 @@ std::nullopt_t hello(
 	response.prepare_payload(); // this line is important!
 	return std::nullopt;
 }
-
+// 
 // if you return a json object, the serialization
 // is performed automatically.
 boost::json::object user_register(
@@ -127,6 +157,48 @@ boost::json::object user_register(
 		{"success", true},
 		{"message", "user registered"}
 	};
+}
+
+// if you return a json object, the serialization
+// is performed automatically.
+boost::json::object a_function_user_register(
+	bserv::request_type& request,
+	// the json object is obtained from the request body,
+	// as well as the url parameters
+	boost::json::object&& params,
+	std::shared_ptr<bserv::db_connection> conn) {
+	if (request.method() != boost::beast::http::verb::post) {
+		throw bserv::url_not_found_exception{};
+	}
+	if (params.count("email") == 0) {
+		return {};
+	}
+	if (params.count("password") == 0) {
+		return {};
+	}
+	auto name = params["name"].as_string();
+	auto email = params["email"].as_string();
+	bserv::db_transaction tx{ conn };
+	auto opt_user = get_user(tx, email);
+	if (opt_user.has_value()) {
+		return {};
+	}
+	auto password = params["password"].as_string();
+	bserv::db_result r = tx.exec(
+		"insert into ? "
+		"(name, password, "
+		"email) values "
+		"(?, ?, ?)", bserv::db_name("auth_user"),
+		name,
+        password,
+        email);
+	lginfo << r.query();
+	tx.commit(); // you must manually commit changes
+    return {
+        {"email", params["email"].as_string()},
+        {"password", params["password"].as_string()},
+        {"name", params["name"].as_string()}
+    };
 }
 
 boost::json::object user_login(
@@ -182,11 +254,65 @@ boost::json::object user_login(
 	};
 }
 
+boost::json::object a_function_user_login(
+	bserv::request_type& request,
+	boost::json::object&& params,
+	std::shared_ptr<bserv::db_connection> conn) {
+	if (request.method() != boost::beast::http::verb::post) {
+		throw bserv::url_not_found_exception{};
+	}
+	if (params.count("email") == 0) {
+		return {};
+	}
+	if (params.count("password") == 0) {
+		return {};
+	}
+	auto email = params["email"].as_string();
+	auto password = params["password"].as_string();
+	bserv::db_transaction tx{ conn };
+	auto opt_user = get_user_from_password(tx, email, password);
+	if (!opt_user.has_value()) {
+		return {};
+	}
+	auto& user = opt_user.value();
+    return user;
+}
+
+// if you return a json object, the serialization
+// is performed automatically.
+boost::json::array a_function_restaurants(
+	bserv::request_type& request,
+	// the json object is obtained from the request body,
+	// as well as the url parameters
+	boost::json::object&& params,
+	std::shared_ptr<bserv::db_connection> conn) {
+	if (params.count("email") == 0) {
+		return {};
+	}
+	if (params.count("password") == 0) {
+		return {};
+	}
+	bserv::db_transaction tx{ conn };
+	auto email = params["email"].as_string();
+	auto password = params["password"].as_string();
+    if (request.method() == boost::beast::http::verb::get) {
+        // fetch restaurants
+        auto res = get_restaurants(tx, email, password);
+        boost::json::array ret;
+        for (auto&& obj : res) {
+            ret.push_back(obj);
+        }
+        return ret;
+    } else {
+		throw bserv::url_not_found_exception{};
+	}
+}
+
 boost::json::object find_user(
 	std::shared_ptr<bserv::db_connection> conn,
-	const std::string& username) {
+	const std::string& name) {
 	bserv::db_transaction tx{ conn };
-	auto user = get_user(tx, username.c_str());
+	auto user = get_user(tx, name.c_str());
 	if (!user.has_value()) {
 		return {
 			{"success", false},

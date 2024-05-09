@@ -23,6 +23,12 @@ boost::json::object user_login(
     std::shared_ptr<bserv::db_connection> conn,
     std::shared_ptr<bserv::session_type> session_ptr);
 
+boost::json::object user_login(
+    bserv::request_type& request,
+    boost::json::object&& params,
+    std::shared_ptr<bserv::db_connection> conn,
+    std::shared_ptr<bserv::session_type> session_ptr);
+
 boost::json::object find_user(
     std::shared_ptr<bserv::db_connection> conn,
     const std::string& username);
@@ -74,3 +80,24 @@ std::nullopt_t form_add_user(
     boost::json::object&& params,
     std::shared_ptr<bserv::db_connection> conn,
     std::shared_ptr<bserv::session_type> session_ptr);
+
+boost::json::object a_function_user_register(
+	bserv::request_type& request,
+	// the json object is obtained from the request body,
+	// as well as the url parameters
+	boost::json::object&& params,
+	std::shared_ptr<bserv::db_connection> conn);
+
+boost::json::object a_function_user_login(
+	bserv::request_type& request,
+	// the json object is obtained from the request body,
+	// as well as the url parameters
+	boost::json::object&& params,
+	std::shared_ptr<bserv::db_connection> conn);
+
+boost::json::array a_function_restaurants(
+	bserv::request_type& request,
+	// the json object is obtained from the request body,
+	// as well as the url parameters
+	boost::json::object&& params,
+	std::shared_ptr<bserv::db_connection> conn);
