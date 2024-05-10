@@ -65,6 +65,24 @@ std::vector<boost::json::object> get_restaurants(
     }
 }
 
+std::vector<boost::json::object> search_restaurants(
+	bserv::db_transaction& tx,
+	const boost::json::string& email,
+    const boost::json::string& password,
+    const boost::json::string& keyword) {
+    auto user = get_user_from_password(tx, email, password);
+    if (user.has_value()) {
+        boost::json::string query_string(std::string("%" + std::string(boost::json::string_view(keyword)) + "%"));
+        bserv::db_result r = tx.exec(
+            "select * from ? where user_id = ? and name like ?", bserv::db_name("restaurants"), user.value()["id"].as_int64(), query_string);
+        lginfo << r.query(); // this is how you log info
+        return orm_restaurant.convert_to_vector(r);
+        
+    } else {
+        return {};
+    }
+}
+
 std::optional<boost::json::object> get_restaurant(
 	bserv::db_transaction& tx,
 	const boost::json::string& email,
@@ -285,7 +303,7 @@ boost::json::object a_function_user_edit(
 	auto prev_password = params["prev_password"].as_string();
 	bserv::db_transaction tx{ conn };
 	auto opt_user = get_user_from_password(tx, prev_email, prev_password);
-	if (not opt_user.has_value() or prev_email != email) {
+	if (not opt_user.has_value()) {
 		return {};
 	}
 	auto password = params["password"].as_string();
@@ -462,6 +480,36 @@ boost::json::array a_function_query_restaurants(
     if (request.method() == boost::beast::http::verb::post) {
         // fetch restaurants
         auto res = get_restaurants(tx, email, password);
+        boost::json::array ret;
+        for (auto&& obj : res) {
+            ret.push_back(obj);
+        }
+        return ret;
+    } else {
+		throw bserv::url_not_found_exception{};
+	}
+}
+
+// if you return a json object, the serialization
+// is performed automatically.
+boost::json::array a_function_search_restaurants(
+	bserv::request_type& request,
+	// the json object is obtained from the request body,
+	// as well as the url parameters
+	boost::json::object&& params,
+	std::shared_ptr<bserv::db_connection> conn) {
+	if (params.count("email") == 0) {
+		return {};
+	}
+	if (params.count("password") == 0) {
+		return {};
+	}
+	bserv::db_transaction tx{ conn };
+	auto email = params["email"].as_string();
+	auto password = params["password"].as_string();
+    if (request.method() == boost::beast::http::verb::post) {
+        // fetch restaurants
+        auto res = search_restaurants(tx, email, password, params["keyword"].as_string());
         boost::json::array ret;
         for (auto&& obj : res) {
             ret.push_back(obj);
