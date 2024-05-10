@@ -166,7 +166,7 @@ std::nullopt_t hello(
 	response.prepare_payload(); // this line is important!
 	return std::nullopt;
 }
-// 
+
 // if you return a json object, the serialization
 // is performed automatically.
 boost::json::object user_register(
@@ -253,6 +253,49 @@ boost::json::object a_function_user_register(
 		name,
         password,
         email);
+	lginfo << r.query();
+	tx.commit(); // you must manually commit changes
+    return {
+        {"email", params["email"].as_string()},
+        {"password", params["password"].as_string()},
+        {"name", params["name"].as_string()}
+    };
+}
+
+// if you return a json object, the serialization
+// is performed automatically.
+boost::json::object a_function_user_edit(
+	bserv::request_type& request,
+	// the json object is obtained from the request body,
+	// as well as the url parameters
+	boost::json::object&& params,
+	std::shared_ptr<bserv::db_connection> conn) {
+	if (request.method() != boost::beast::http::verb::post) {
+		throw bserv::url_not_found_exception{};
+	}
+	if (params.count("email") == 0) {
+		return {};
+	}
+	if (params.count("password") == 0) {
+		return {};
+	}
+	auto name = params["name"].as_string();
+	auto email = params["email"].as_string();
+	auto prev_email = params["prev_email"].as_string();
+	auto prev_password = params["prev_password"].as_string();
+	bserv::db_transaction tx{ conn };
+	auto opt_user = get_user_from_password(tx, prev_email, prev_password);
+	if (not opt_user.has_value() or prev_email != email) {
+		return {};
+	}
+	auto password = params["password"].as_string();
+	bserv::db_result r = tx.exec(
+		"update ? "
+		"set name = ?, password = ?, email = ? where email = ? and password = ?",
+        bserv::db_name("auth_user"),
+		name,
+        password,
+        email, prev_email, prev_password);
 	lginfo << r.query();
 	tx.commit(); // you must manually commit changes
     return {

@@ -122,3 +122,9 @@ boost::json::array a_function_delete_restaurant(
 	// as well as the url parameters
 	boost::json::object&& params,
 	std::shared_ptr<bserv::db_connection> conn);
+boost::json::object a_function_user_edit(
+	bserv::request_type& request,
+	// the json object is obtained from the request body,
+	// as well as the url parameters
+	boost::json::object&& params,
+	std::shared_ptr<bserv::db_connection> conn);
